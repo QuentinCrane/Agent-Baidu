@@ -79,6 +79,7 @@ def extract_json(content):
     try:
         # 预处理内容，移除可能的干扰字符
         content = content.strip()
+        print(f"原始API响应内容:\n{content}\n")
         
         # 首先尝试使用正则表达式查找代码块中的JSON
         json_blocks = json_block_regex.findall(content)
@@ -86,12 +87,93 @@ def extract_json(content):
             full_json = "\n".join(json_blocks)
             if full_json.startswith("json"):
                 full_json = full_json[5:]
-            # 打印提取的JSON内容，便于调试
-            print(f"提取的JSON内容: {full_json[:100]}...")
+            print(f"提取的JSON内容:\n{full_json[:1000]}...\n")
             return full_json
         
         # 如果没有找到代码块，尝试直接从内容中提取JSON
         print("未找到代码块中的JSON内容，尝试直接提取")
+        
+        # 尝试修复常见JSON格式问题
+        # 1. 处理单引号问题
+        content = content.replace("'", '"')
+        # 2. 处理中文引号问题
+        content = content.replace("“", '"').replace("”", '"')
+        # 3. 处理多余的逗号
+        content = re.sub(r',\s*([\]\}])', r'\1', content)
+        # 4. 处理注释
+        content = re.sub(r'//.*?\n', '\n', content)
+        # 5. 处理属性名缺少引号的问题
+        content = re.sub(r'(\{|\,)\s*(\w+)\s*:', r'\1"\2":', content)
+        
+        # 尝试查找最外层的花括号对
+        start_idx = content.find('{')
+        end_idx = content.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            possible_json = content[start_idx:end_idx+1]
+            
+            try:
+                # 尝试解析修复后的JSON
+                result = json.loads(possible_json)
+                print(f"成功提取到有效JSON内容: {possible_json[:100]}...")
+                return possible_json
+            except json.JSONDecodeError as e:
+                print(f"JSON解析错误: {e}")
+                # 尝试更激进的修复
+                try:
+                    # 处理可能的Unicode转义问题
+                    possible_json = possible_json.encode('unicode-escape').decode('ascii')
+                    possible_json = re.sub(r'\\\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), possible_json)
+                    result = json.loads(possible_json)
+                    print(f"通过Unicode转义修复后提取到JSON内容: {possible_json[:100]}...")
+                    return possible_json
+                except Exception:
+                    pass
+        
+        # 如果所有方法都失败，尝试构建最小有效JSON
+        print("尝试构建最小有效JSON")
+        minimal_json = {
+            "task": "",
+            "process": "0",
+            "time": "1",
+            "tasks": []
+        }
+        
+        # 提取关键字段
+        task_match = re.search(r'"task"\s*:\s*"([^"]*)"', content)
+        process_match = re.search(r'"process"\s*:\s*"?([\d]+)"?', content)
+        time_match = re.search(r'"time"\s*:\s*"?([\d]+)"?', content)
+        
+        if task_match: minimal_json["task"] = task_match.group(1)
+        if process_match: minimal_json["process"] = process_match.group(1)
+        if time_match: minimal_json["time"] = time_match.group(1)
+        
+        # 提取tasks数组
+        tasks_match = re.search(r'"tasks"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+        if tasks_match:
+            task_items = re.findall(r'\{([^\}]*)\}', tasks_match.group(1))
+            for task_item in task_items[:10]:  # 最多处理10个任务
+                task_dict = {}
+                name_match = re.search(r'"name"\s*:\s*"([^"]*)"', task_item)
+                position_match = re.search(r'"position"\s*:\s*"([^"]*)"', task_item)
+                to_match = re.search(r'"to"\s*:\s*"([^"]*)"', task_item)
+                do_match = re.search(r'"do_"\s*:\s*"([^"]*)"', task_item)
+                emoji_match = re.search(r'"emoji"\s*:\s*"([^"]*)"', task_item)
+                
+                if name_match: task_dict["name"] = name_match.group(1)
+                if position_match: task_dict["position"] = position_match.group(1)
+                if to_match: task_dict["to"] = to_match.group(1)
+                if do_match: task_dict["do_"] = do_match.group(1)
+                if emoji_match: task_dict["emoji"] = emoji_match.group(1)
+                
+                if task_dict:
+                    minimal_json["tasks"].append(task_dict)
+        
+        print("成功构建最小有效JSON")
+        return json.dumps(minimal_json, ensure_ascii=False)
+    except Exception as e:
+        print(f"提取JSON时出错: {e}")
+        return None
         
         # 尝试修复常见JSON格式问题
         # 1. 处理单引号问题
@@ -240,22 +322,26 @@ def string_to_dict(dict_string):
         # 方法3: 处理注释和多余逗号后使用json.loads
         lambda s: json.loads(
             re.sub(r',\s*([\]\}])', r'\1',
-                re.sub(r'//.*?\n', '\n', s.replace("'", '"'))
+                re.sub(r'//.*?\n', '\n', 
+                    s.replace("'", '"')
+                )
             )
         ),
         
         # 方法4: 尝试修复常见JSON格式问题
         lambda s: json.loads(
-            re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', 
+            re.sub(r'([{,})\s*(\w+)\s*:', r'\1"\2":', 
                 re.sub(r',\s*([\]\}])', r'\1',
-                    re.sub(r'//.*?\n', '\n', s.replace("'", '"'))
+                    re.sub(r'//.*?\n', '\n', 
+                        re.sub(r'\\([^"\\])', r'\\\\\1', s.replace("'", '"'))
+                    )
                 )
             )
         ),
         
         # 方法5: 更激进的修复，处理可能的Unicode转义问题
         lambda s: json.loads(
-            re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', 
+            re.sub(r'([{,})\s*(\w+)\s*:', r'\1"\2":', 
                 re.sub(r',\s*([\]\}])', r'\1',
                     re.sub(r'//.*?\n', '\n', 
                         re.sub(r'\\([^"\\])', r'\\\\\1', s.replace("'", '"'))
@@ -267,20 +353,20 @@ def string_to_dict(dict_string):
         # 方法6: 尝试修复可能的嵌套引号问题
         lambda s: json.loads(
             re.sub(r'"([^"]*?)"([^"]*?)"([^"]*?)"', r'"\1\'\2\'\3"', 
-                re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', 
+                re.sub(r'([{,}])\s*(\w+)\s*:', r'\1"\2":',
                     re.sub(r',\s*([\]\}])', r'\1',
-                        re.sub(r'//.*?\n', '\n', s.replace("'", '"'))
+                        re.sub(r'//.*?\n', '\n', s.replace('\'', '"'))
                     )
                 )
             )
         ),
         
-        # 方法7: 处理可能的JSON片段，尝试修复不完整的JSON
+        # 方法7: 尝试修复不完整的JSON片段
         lambda s: json.loads(
-            re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', 
+            re.sub(r'([{,}])\s*(\w+)\s*:', r'\1"\2":',
                 re.sub(r',\s*([\]\}])', r'\1',
                     re.sub(r'//.*?\n', '\n', 
-                        re.sub(r'[\n\r\t]', ' ', s.replace("'", '"'))
+                        s.replace('\'', '"')
                     )
                 )
             )
@@ -289,8 +375,8 @@ def string_to_dict(dict_string):
         # 方法8: 尝试修复可能的转义字符问题
         lambda s: json.loads(
             re.sub(r'\\(?!["\\bfnrt])', '', 
-                re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', 
-                    s.replace("'", '"')
+                re.sub(r'([{,}])\s*(\w+)\s*:', r'\1"\2":', 
+                    s.replace('\'', '"')
                 )
             )
         )
@@ -321,7 +407,91 @@ def string_to_dict(dict_string):
             # 尝试解析这部分内容
             try:
                 return json.loads(
-                    re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', 
+                    re.sub(r'([{,})\s*(\w+)\s*:', r'\1"\2":', 
+                        partial_json.replace("'", '"')
+                    )
+                )
+            except json.JSONDecodeError:
+                # 尝试更激进的清理
+                cleaned_json = re.sub(r'[\n\r\t]', ' ', partial_json)  # 移除换行符等
+                cleaned_json = re.sub(r'\s+', ' ', cleaned_json)  # 压缩空白
+                cleaned_json = re.sub(r'"([^"]*?)"([^"]*?)"([^"]*?)"', r'"\1\'\2\'\3"', cleaned_json)  # 处理嵌套引号
+                
+                # 尝试手动构建一个最小有效的JSON
+                if 'task' in cleaned_json and 'process' in cleaned_json and 'time' in cleaned_json and 'tasks' in cleaned_json:
+                    try:
+                        # 提取关键字段
+                        task_match = re.search(r'"task"\s*:\s*"([^"]*)"', cleaned_json)
+                        process_match = re.search(r'"process"\s*:\s*"?([\d]+)"?', cleaned_json)
+                        time_match = re.search(r'"time"\s*:\s*"?([\d]+)"?', cleaned_json)
+                        
+                        if task_match and process_match and time_match:
+                            # 构建最小JSON
+                            minimal_json = {
+                                'task': task_match.group(1),
+                                'process': process_match.group(1),
+                                'time': time_match.group(1),
+                                'tasks': []
+                            }
+                            
+                            # 尝试提取tasks数组
+                            tasks_match = re.search(r'"tasks"\s*:\s*\[(.*?)\]', cleaned_json, re.DOTALL)
+                            if tasks_match:
+                                # 简单处理，提取name和position
+                                task_items = re.findall(r'\{([^\}]*)\}', tasks_match.group(1))
+                                for task_item in task_items[:10]:  # 最多处理10个任务
+                                    task_dict = {}
+                                    name_match = re.search(r'"name"\s*:\s*"([^"]*)"', task_item)
+                                    position_match = re.search(r'"position"\s*:\s*"([^"]*)"', task_item)
+                                    to_match = re.search(r'"to"\s*:\s*"([^"]*)"', task_item)
+                                    do_match = re.search(r'"do_"\s*:\s*"([^"]*)"', task_item)
+                                    emoji_match = re.search(r'"emoji"\s*:\s*"([^"]*)"', task_item)
+                                    
+                                    if name_match: task_dict['name'] = name_match.group(1)
+                                    if position_match: task_dict['position'] = position_match.group(1)
+                                    if to_match: task_dict['to'] = to_match.group(1)
+                                    if do_match: task_dict['do_'] = do_match.group(1)
+                                    if emoji_match: task_dict['emoji'] = emoji_match.group(1)
+                                    
+                                    if task_dict:
+                                        minimal_json['tasks'].append(task_dict)
+                        
+                        print("成功构建最小有效JSON")
+                        return minimal_json
+                    except Exception as e:
+                        print(f"构建最小JSON失败: {e}")
+    except Exception as e:
+        print(f"提取部分有效JSON失败: {e}")
+    
+    print("所有解析方法都失败，无法将字符串转换为字典")
+    return None
+    
+    # 尝试每种方法
+    for i, method in enumerate(methods):
+        try:
+            dictionary = method(dict_string)
+            print(f"使用方法{i+1}成功解析JSON")
+            return dictionary
+        except (SyntaxError, ValueError, json.JSONDecodeError) as e:
+            print(f"使用方法{i+1}解析失败: {e}")
+            continue
+        except Exception as e:
+            print(f"使用方法{i+1}时出现未知错误: {e}")
+            continue
+    
+    # 如果所有方法都失败，尝试最后的手段：提取部分有效的JSON
+    try:
+        print("尝试提取部分有效的JSON")
+        # 查找最外层的花括号
+        start_idx = dict_string.find('{')
+        end_idx = dict_string.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            partial_json = dict_string[start_idx:end_idx+1]
+            # 尝试解析这部分内容
+            try:
+                return json.loads(
+                    re.sub(r'([{,})\s*(\w+)\s*:', r'\1"\2":', 
                         partial_json.replace("'", '"')
                     )
                 )
@@ -778,7 +948,7 @@ def main():
                     response = chat("请基于本任务在完成过程中全部员工的工作内容，做一个结项报告书。要求语言简短，不需要生成句号，记得及时换行。\
                                     格式如下：\
                                     任务名称：\
-                                    所有参与员工及在这个任务中所做事宜与对这个员工的评价(不超过一行)：\
+                                    所有参与员工及在这个任务中所事宜与对这个员工的评价(不超过一行)：\
                                     整体工作内容概况：")
                     new = {'resultType': 'closingReport', 'closingReport': response}
                     socketserver.send(new)
