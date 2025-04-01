@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!221 &22100000
+AnimatorOverrideController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: SunQi Animator
+  m_Controller: {fileID: 9100000, guid: 89c84de3a4321fa45987e29cf5cd7db4, type: 2}
+  m_Clips:
+  - m_OriginalClip: {fileID: 7400000, guid: 92558cc26ab70184ab81fa553b3c325e, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 8f561df8237c6e6429759feb8472cfa9, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 9e1234d7efbeb50439693008e035b9e6, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 5ac6876a6e50b1b469dfe9b3ebe7646d, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 70c2ea9123db0ab48b1984dde898896d, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: d900645cf6b001842b6d01fe3d6ba449, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 073fcbc1a86358f4f8bdb78d43371fd4, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 4e9bba62cfa98b7459a043fe7327ec73, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: a93847b6e44ae2b409dd39c8b39d173c, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: e27b6e5578043f44696aedd28d84c246, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 47309a18d92da7d42a0dbecacb456c61, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 77eb35e5b035b044fadbd8afb5c0ad33, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 54b426b778cee6648848bcb8f29fb560, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 242aacbcd0b33704ebb0fe777f6a7da3, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: a454f2e4d9f8c754fab2f5239623e51a, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: c4145b55de70fce4181f28285f3d71de, type: 2}
