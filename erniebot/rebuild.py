@@ -53,7 +53,8 @@ systems = "假如你是一场虚拟音乐会的总导演，目前需要你来针
 		        ……\
 		    ]\
 		} \
-         请你特别注意，不要生成过多的表情符号,也不要使用文字来代替表情符号！！！不要生成过多的表情符号,也不要使用文字来代替表情符号！！！"
+         请你特别注意，不要生成过多的表情符号,也不要使用文字来代替表情符号！！！不要生成过多的表情符号,也不要使用文字来代替表情符号！！！\
+            请在生成完 第一天的 后就停止，除非输入'继续'后，才能继续生成"
 
 # 初始化消息列表
 messages = [
@@ -762,7 +763,6 @@ def main():
                 return f"Error JSON: {e}"
     
     # 提取任务信息
-    # 添加错误处理,确保extract_info返回有效值
     try:
         result = extract_info(recv_data)
         if result is None or isinstance(result, str):
@@ -773,19 +773,21 @@ def main():
         print(f"解析recv_data时出错: {e}")
         return
     
-    # 处理任务循环
-    for index in range(50):
-        max_attempts = 5  # 每天最多尝试5次，增加尝试次数
+    # 初始化天数计数器
+    current_day = 0
+    
+    # 主循环 - 每次只处理一天的任务
+    while current_day < 50:  # 设置最大天数限制
+        max_attempts = 5  # 每天最多尝试5次
         success = False
         json_dict = None  # 初始化json_dict
         
         for attempt in range(max_attempts):
             try:
-                # 第一天处理
-                if index == 0:
+                # 根据是否是第一天决定发送的内容
+                if current_day == 0:
                     if type == True:
                         response = chat(question)
-                # 后续天数处理
                 else:
                     response = chat("继续")
                 
@@ -830,9 +832,9 @@ def main():
                         print("尝试手动构建基本JSON结构")
                         try:
                             # 尝试提取关键字段
-                            task_match = re.search(r'["\']task["\']\s*:\s*["\']([^"\']*)["\']', json_str)
-                            process_match = re.search(r'["\']process["\']\s*:\s*["\']?(\d+)["\']?', json_str)
-                            time_match = re.search(r'["\']time["\']\s*:\s*["\']?(\d+)["\']?', json_str)
+                            task_match = re.search(r'["\'](task)["\'](\s)*:(\s)*["\'](.*?)["\'](,)?', json_str)
+                            process_match = re.search(r'["\'](process)["\'](\s)*:(\s)*["\'](\d+)["\'](,)?', json_str)
+                            time_match = re.search(r'["\'](time)["\'](\s)*:(\s)*["\'](\d+)["\'](,)?', json_str)
                             
                             if task_match and process_match and time_match:
                                 json_dict = {
@@ -863,11 +865,11 @@ def main():
                             # 最后一次尝试，尝试填充缺失字段
                             for field in missing_fields:
                                 if field == 'task':
-                                    json_dict['task'] = question if index == 0 else "继续任务"
+                                    json_dict['task'] = question if current_day == 0 else "继续任务"
                                 elif field == 'process':
-                                    json_dict['process'] = str(min(20 * (index + 1), 100))  # 简单估算进度
+                                    json_dict['process'] = str(min(20 * (current_day + 1), 100))  # 简单估算进度
                                 elif field == 'time':
-                                    json_dict['time'] = str(index + 1)
+                                    json_dict['time'] = str(current_day + 1)
                                 elif field == 'tasks':
                                     json_dict['tasks'] = []
                     
@@ -904,18 +906,19 @@ def main():
             for field in required_fields:
                 if field not in json_dict:
                     if field == 'task':
-                        json_dict['task'] = question if index == 0 else "继续任务"
+                        json_dict['task'] = question if current_day == 0 else "继续任务"
                     elif field == 'process':
-                        json_dict['process'] = min(20 * (index + 1), 100)  # 简单估算进度
+                        json_dict['process'] = min(20 * (current_day + 1), 100)  # 简单估算进度
                     elif field == 'time':
-                        json_dict['time'] = index + 1
+                        json_dict['time'] = current_day + 1
                     elif field == 'tasks':
                         json_dict['tasks'] = []
             success = True
         
         # 如果所有尝试都失败，跳过当天
         if not success:
-            print(f"警告：第{index+1}天的任务处理失败，尝试继续下一天")
+            print(f"警告：第{current_day+1}天的任务处理失败，尝试继续下一天")
+            current_day += 1
             continue
         
         # 添加结果类型
@@ -923,10 +926,10 @@ def main():
         json_dict = {**new, **json_dict}
         
         # 发送结果
-        print("达到发送部分")
+        print(f"准备发送第{current_day+1}天任务数据")
         try:
             socketserver.send(json_dict)
-            print("发送完成")
+            print(f"第{current_day+1}天任务数据发送完成")
         except Exception as e:
             print(f"发送结果时出错: {e}")
             # 尝试重新发送
@@ -937,6 +940,7 @@ def main():
                 print("重新发送成功")
             except Exception as e:
                 print(f"重新发送结果失败: {e}")
+                current_day += 1
                 continue  # 继续下一天的处理
         
         # 检查任务是否完成
@@ -948,7 +952,7 @@ def main():
                     response = chat("请基于本任务在完成过程中全部员工的工作内容，做一个结项报告书。要求语言简短，不需要生成句号，记得及时换行。\
                                     格式如下：\
                                     任务名称：\
-                                    所有参与员工及在这个任务中所事宜与对这个员工的评价(不超过一行)：\
+                                    所有参与员工及在这个任务中所做事宜与对这个员工的评价(不超过一行)：\
                                     整体工作内容概况：")
                     new = {'resultType': 'closingReport', 'closingReport': response}
                     socketserver.send(new)
@@ -963,9 +967,13 @@ def main():
                         print(f"发送简单结项报告: {simple_report}")
                     except:
                         pass
-                break
+                break  # 任务完成，退出主循环
         except Exception as e:
             print(f"检查任务完成状态时出错: {e}")
+        
+        # 等待30秒后再继续下一天的处理
+        print(f"等待2秒后继续处理第{current_day+2}天的任务...")
+        time.sleep(2)
         
         # 等待继续信号
         wait_signal_attempts = 5  # 最多等待5次继续信号
@@ -976,7 +984,12 @@ def main():
                 recv_data = socketserver.recv()
                 if recv_data == False:
                     print(f"等待继续信号时接收到无效数据 (尝试 {signal_attempt+1}/{wait_signal_attempts})")
-                    time.sleep(1)  # 等待1秒后重试
+                    if signal_attempt == wait_signal_attempts - 1:
+                        # 最后一次尝试，如果仍然失败，我们假设可以继续
+                        print("未能接收到有效的继续信号，但尝试继续处理")
+                        received_signal = True
+                    else:
+                        time.sleep(1)  # 等待1秒后重试
                     continue
                     
                 result = extract_info(recv_data)
@@ -988,6 +1001,7 @@ def main():
                 type, res = result
                 if type == False and res == True:
                     received_signal = True
+                    print("收到有效的继续信号，处理下一天任务")
                     break
                 else:
                     print(f"收到意外的继续信号: type={type}, res={res} (尝试 {signal_attempt+1}/{wait_signal_attempts})")
@@ -997,13 +1011,15 @@ def main():
                 time.sleep(1)  # 等待1秒后重试
         
         # 如果没有收到有效的继续信号，但已经不是第一天，可以尝试继续
-        if not received_signal and index > 0:
+        if not received_signal and current_day > 0:
             print("未收到有效的继续信号，但尝试继续处理下一天")
-            continue
         # 如果是第一天且没有收到继续信号，可能需要退出
-        elif not received_signal and index == 0:
+        elif not received_signal and current_day == 0:
             print("第一天未收到有效的继续信号，退出程序")
             break
+            
+        # 增加天数计数器
+        current_day += 1
 
 if __name__ == "__main__":
     main()
